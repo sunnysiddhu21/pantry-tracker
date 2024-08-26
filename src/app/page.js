@@ -1,113 +1,464 @@
-import Image from "next/image";
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Box, Stack, Typography, Button, Modal, TextField } from '@mui/material'
+import { firestore } from '@/firebase'
+import {
+  collection,
+  getDocs,
+  query,
+  getDoc,
+  setDoc,
+  doc,
+  deleteDoc
+} from 'firebase/firestore'
+import { Pie } from 'react-chartjs-2'
+import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
+
+ChartJS.register(ArcElement, Tooltip, Legend)
+
+const modalStyle = {
+  position: 'absolute',
+  top: '50%',
+  left: '50%',
+  transform: 'translate(-50%, -50%)',
+  width: 600,
+  bgcolor: '#1e1e1e', // Dark background for modal
+  borderRadius: '16px',
+  boxShadow: 24,
+  p: 4,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 3,
+}
+
+const buttonStyle = {
+  borderRadius: '20px',
+  textTransform: 'none',
+  backgroundColor: '#00bcd4', // Neon teal color
+  color: 'white',
+}
+
+const inventoryItemStyle = {
+  borderRadius: '12px',
+  padding: '16px',
+  backgroundColor: '#2a2a2a', // Dark item box
+  boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 1,
+  alignItems: 'flex-start',
+}
+
+const containerStyle = {
+  display: 'flex',
+  flexDirection: 'row',
+  width: '100%',
+  height: 'calc(100vh - 80px)',
+  gap: '20px',
+  overflow: 'auto',
+}
+
+const chartContainerStyle = {
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
+  alignItems: 'center',
+}
+
+const gradientBackground = {
+  background: '#121212', // Futuristic dark background
+}
+
+const inventoryContainerStyle = {
+  width: '50%',
+  bgcolor: '#1f1f1f', // Dark contrasting color for inventory box
+  borderRadius: '12px',
+  overflow: 'hidden',
+  boxShadow: '0 6px 12px rgba(0,0,0,0.3)',
+  p: 2,
+  maxHeight: 'calc(100vh - 80px)',
+  overflow: 'auto',
+  color: 'white', // White font color for contrast
+}
+
+const chartStyle = {
+  width: '100%',
+  height: '100%',
+  maxWidth: '600px',
+  bgcolor: '#2a2a2a', // Dark grey for pie chart box
+  borderRadius: '12px',
+  boxShadow: '0 6px 12px rgba(0,0,0,0.3)',
+  p: 2,
+}
+
+const searchBarContainerStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '16px',
+  mb: 3,
+}
+
+const searchBarStyle = {
+  flex: 1,
+  borderRadius: '20px',
+  bgcolor: 'white', // White background for search bar
+  input: {
+    color: 'black',
+  },
+}
+
+const addButtonStyle = {
+  ...buttonStyle,
+  backgroundColor: '#ff4081', // Neon pink color for "Add New Item" button
+}
 
 export default function Home() {
+  const [inventory, setInventory] = useState([])
+  const [filteredInventory, setFilteredInventory] = useState([])
+  const [openAdd, setOpenAdd] = useState(false)
+  const [openUpdate, setOpenUpdate] = useState(false)
+  const [itemName, setItemName] = useState('')
+  const [description, setDescription] = useState('')
+  const [entryDate, setEntryDate] = useState('')
+  const [expiryDate, setExpiryDate] = useState('')
+  const [quantity, setQuantity] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedItemId, setSelectedItemId] = useState(null)
+
+  const updateInventory = async () => {
+    const snapshot = query(collection(firestore, 'inventory'))
+    const docs = await getDocs(snapshot)
+    const inventoryList = []
+    docs.forEach((doc) => {
+      inventoryList.push({ id: doc.id, ...doc.data() })
+    })
+    setInventory(inventoryList)
+    setFilteredInventory(inventoryList)
+  }
+
+  const removeItem = async (itemId) => {
+    const docRef = doc(collection(firestore, 'inventory'), itemId)
+    const docSnap = await getDoc(docRef)
+    if (docSnap.exists()) {
+      const { quantity } = docSnap.data()
+      if (quantity === 1) {
+        await deleteDoc(docRef)
+      } else {
+        await setDoc(docRef, { quantity: quantity - 1 }, { merge: true })
+      }
+    }
+    await updateInventory()
+  }
+
+  const addItem = async () => {
+    const docRef = doc(collection(firestore, 'inventory'), itemName)
+    const docSnap = await getDoc(docRef)
+    if (docSnap.exists()) {
+      const { quantity: existingQuantity } = docSnap.data()
+      await setDoc(docRef, { quantity: existingQuantity + parseInt(quantity) }, { merge: true })
+    } else {
+      await setDoc(docRef, { quantity: parseInt(quantity), description, entryDate, expiryDate })
+    }
+    setItemName('')
+    setDescription('')
+    setEntryDate('')
+    setExpiryDate('')
+    setQuantity('')
+    handleCloseAdd()
+    await updateInventory()
+  }
+
+  const updateItem = async () => {
+    const docRef = doc(collection(firestore, 'inventory'), selectedItemId)
+    await setDoc(docRef, { quantity: parseInt(quantity), description, entryDate, expiryDate }, { merge: true })
+    setItemName('')
+    setDescription('')
+    setEntryDate('')
+    setExpiryDate('')
+    setQuantity('')
+    handleCloseUpdate()
+    await updateInventory()
+  }
+
+  const handleSearch = (event) => {
+    const query = event.target.value.toLowerCase()
+    setSearchQuery(query)
+    const filtered = inventory.filter(item =>
+      item.id.toLowerCase().includes(query) ||
+      item.description.toLowerCase().includes(query)
+    )
+    setFilteredInventory(filtered)
+  }
+
+  const handleOpenAdd = () => setOpenAdd(true)
+  const handleCloseAdd = () => setOpenAdd(false)
+
+  const handleOpenUpdate = (item) => {
+    setItemName(item.id)
+    setDescription(item.description)
+    setEntryDate(item.entryDate)
+    setExpiryDate(item.expiryDate)
+    setQuantity(item.quantity)
+    setSelectedItemId(item.id)
+    setOpenUpdate(true)
+  }
+
+  const handleCloseUpdate = () => setOpenUpdate(false)
+
+  useEffect(() => {
+    updateInventory()
+  }, [])
+
+  const pieData = {
+    labels: filteredInventory.map(item => item.id),
+    datasets: [
+      {
+        label: 'Quantity',
+        data: filteredInventory.map(item => item.quantity),
+        backgroundColor: filteredInventory.map((_, index) => `hsl(${index * 45}, 70%, 50%)`),
+        borderWidth: 1,
+      },
+    ],
+  }
+
+  const pieOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: {
+          color: 'white',
+        },
+      },
+      tooltip: {
+        enabled: true,
+      },
+    },
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
+    <Box
+      width="100vw"
+      height="100vh"
+      display={'flex'}
+      flexDirection={'column'}
+      alignItems={'center'}
+      p={3}
+      sx={gradientBackground}
+    >
+      {/* Add Item Modal */}
+      <Modal
+        open={openAdd}
+        onClose={handleCloseAdd}
+        aria-labelledby="modal-modal-title-add"
+        aria-describedby="modal-modal-description-add"
+      >
+        <Box sx={modalStyle}>
+          <Typography id="modal-modal-title-add" variant="h6" component="h2" gutterBottom sx={{ color: 'white' }}>
+            Add Item
+          </Typography>
+          <Stack width="100%" direction={'column'} spacing={2}>
+            <TextField
+              id="item-name-add"
+              label="Item Name"
+              variant="outlined"
+              fullWidth
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
             />
-          </a>
-        </div>
-      </div>
+            <TextField
+              id="description-add"
+              label="Description"
+              variant="outlined"
+              fullWidth
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <TextField
+              id="entry-date-add"
+              label="Entry Date"
+              type="date"
+              variant="outlined"
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              value={entryDate}
+              onChange={(e) => setEntryDate(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <TextField
+              id="expiry-date-add"
+              label="Expiry Date"
+              type="date"
+              variant="outlined"
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <TextField
+              id="quantity-add"
+              label="Quantity"
+              type="number"
+              variant="outlined"
+              fullWidth
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={addItem}
+              sx={addButtonStyle}
+            >
+              Add
+            </Button>
+          </Stack>
+        </Box>
+      </Modal>
 
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
+      {/* Update Item Modal */}
+      <Modal
+        open={openUpdate}
+        onClose={handleCloseUpdate}
+        aria-labelledby="modal-modal-title-update"
+        aria-describedby="modal-modal-description-update"
+      >
+        <Box sx={modalStyle}>
+          <Typography id="modal-modal-title-update" variant="h6" component="h2" gutterBottom sx={{ color: 'white' }}>
+            Update Item
+          </Typography>
+          <Stack width="100%" direction={'column'} spacing={2}>
+            <TextField
+              id="item-name-update"
+              label="Item Name"
+              variant="outlined"
+              fullWidth
+              value={itemName}
+              onChange={(e) => setItemName(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <TextField
+              id="description-update"
+              label="Description"
+              variant="outlined"
+              fullWidth
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <TextField
+              id="entry-date-update"
+              label="Entry Date"
+              type="date"
+              variant="outlined"
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              value={entryDate}
+              onChange={(e) => setEntryDate(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <TextField
+              id="expiry-date-update"
+              label="Expiry Date"
+              type="date"
+              variant="outlined"
+              fullWidth
+              InputLabelProps={{ shrink: true }}
+              value={expiryDate}
+              onChange={(e) => setExpiryDate(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <TextField
+              id="quantity-update"
+              label="Quantity"
+              type="number"
+              variant="outlined"
+              fullWidth
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              sx={{ borderRadius: '20px', bgcolor: '#2a2a2a', input: { color: 'white' } }}
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={updateItem}
+              sx={buttonStyle}
+            >
+              Update
+            </Button>
+          </Stack>
+        </Box>
+      </Modal>
 
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
+      <Box sx={containerStyle}>
+        {/* Inventory Section */}
+        <Box sx={inventoryContainerStyle}>
+          <Box sx={searchBarContainerStyle}>
+            <TextField
+              id="search-bar"
+              label="Search"
+              variant="outlined"
+              fullWidth
+              value={searchQuery}
+              onChange={handleSearch}
+              sx={searchBarStyle}
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleOpenAdd}
+              sx={addButtonStyle}
+            >
+              Add New Item
+            </Button>
+          </Box>
 
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800 hover:dark:bg-opacity-30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
+          <Stack spacing={2} mt={2}>
+            {filteredInventory.map((item) => (
+              <Box key={item.id} sx={inventoryItemStyle}>
+                <Typography variant="h6" sx={{ color: 'white', fontWeight: 'bold' }}>{item.id}</Typography>
+                <Typography variant="body2" sx={{ color: 'white' }}>{item.description}</Typography>
+                <Typography variant="body2" sx={{ color: 'white' }}>Entry Date: {item.entryDate}</Typography>
+                <Typography variant="body2" sx={{ color: 'white' }}>Expiry Date: {item.expiryDate}</Typography>
+                <Typography variant="body2" sx={{ color: 'white' }}>Quantity: {item.quantity}</Typography>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  onClick={() => handleOpenUpdate(item)}
+                  sx={buttonStyle}
+                >
+                  Update
+                </Button>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  onClick={() => removeItem(item.id)}
+                  sx={buttonStyle}
+                >
+                  Remove
+                </Button>
+              </Box>
+            ))}
+          </Stack>
+        </Box>
 
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  );
+        {/* Chart Section */}
+        <Box sx={chartContainerStyle}>
+          <Typography variant="h5" gutterBottom sx={{ color: 'white', fontWeight: 'bold' }}>
+            Inventory Pie Chart
+          </Typography>
+          <Box sx={chartStyle}>
+            <Pie data={pieData} options={pieOptions} />
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  )
 }
